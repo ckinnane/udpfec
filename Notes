@@ -1,0 +1,17 @@
+ 1 Incoming UDP socket, encapsulate into buffer, decapsulate to forward address.
+ 2 Shared memory buffer.
+ 3 Timed buffer release.
+ 4 Threaded release, continous receiving and burst send operation.
+ 5 Refactor to threaded entrance and exit using shared memory.
+ 6 Sempaphores or signals to keep sync, reverse path.
+ 7 Include FEC into encasulate, decapsulate.
+ 8 Stats on packet loss to set FEC ratios dynamically.
+
+1. Incoming UDP socket, encapsulate into buffer, decapsulate to forward address.
+	needs a linked list data structure to place incoming packets for a set
+	period before releasing
+	* serialised linked lists in C,
+	* timout callback in C down to milliseconds is ok - nanoseconds better.
+	* at timeout, release packets in one shot
+2. 
+

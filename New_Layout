@@ -1,0 +1,96 @@
+Entrance Forward and Exit Reverse are pretty much done. Timing is all generated from
+a set interval timer being in control of the double buffer.
+Just need to move transmit into its own thread and control it via mutexes.
+
+Entrance Reverse and Exit Forward are different.
+
+This will need 3 threads: Receive, Decode and Transmit.
+
+Receive controls the overall timing, based on ufficient packets received.
+
+Receive waits on a packet read.
+If it is the right frameno, insert into incoming active buffer.
+If we just achieve sufficent packets for this frameno, swap active & inactive, then
+	unlock decode
+If we have all packets in this frameno, more packets with this frameno are discarded.
+decode starts with a double lock to wait for Receive to be ready.
+transmit also starts with a double lock - waiting for decode to be ready.
+transmit uses the global time interval minus decode time to determine transmit time.
+There is no harm accelerating transmits output to ensure it finishes before receive
+has to switch - use a multipier on the main timer interval as well.
+if decode is unlocked before transmit is complete, dump remaining packets without the
+timer - this can be done with decode signalling via a shared var that it is starting.
+a toggle might be a good option, if transmit sees a change either way, dump packets.
+that in place and a mutex to force decode to wait until a transmit is complete
+
+Since coded buffers don't need to be contiguous, they can use a full FIFO instead of
+double bufferring - this will prevent hicupps in internet timing from accidently
+overwriting in a double buffer. Use a double buffer for decoded.
+
+decode should also wait at the start for a channel mutex chana or chanb maybe
+still active when receive unlocks decode. decode should proceed when its own lock
+and the channel transmit lock are clear. Thats 2 mutexes for channel lock and 1 for
+decode lock.
+
+Working, but not fast and it breaks.
+Optimisations:
+ - convert 2 thread encode into 3 threaded encode to get the full frame for both
+   encode and transmit.
+ - place a limit on receive buffer - stop encap packets on full frames.
+ - Use ahead, behind buffer with a switch that cycles more than 2 buffers in the back.
+ - ensure transmit timing is initiated by the first read after any receive lapse.
+ - separate fec code management from threads - just pass the code in and adjust it
+   by stats from decode receive sent to the opposite side.
+
+ - use my own semaphores so each buffer has a state associated, that way transmit can check if a buffer is ready to send before issuing a mutex wait.
+  
+------------
+cyclic buffers
+
+Decode Receive:
+packets from any frame.
+if frameno matches first buffer frame or is new then hash directly into the
+	asociated frame.
+then, if this buffer is complete, mark the associated raw_status,
+	increase raw stack
+	unlock process mutex
+
+Decode Process:
+check raw stack, if 0, wait process mutex.
+find first available buffer by searching from process active index forward against
+	the raw status vector.
+decode from raw[found] into coded[found]
+set coded_ready[found]
+unset raw_status[found]
+decrease raw stack
+increase coded stack
+If found is process active index, increase process active index.
+unlock transmit mutex.
+
+Decode Transmit:
+check coded stack, if 0, wait transmit mutex.
+find first available buffer by searching from transmit active index forward against
+	the process status vector.
+timed release of coded[found].
+unset coded_ready[found]
+decrease coded stack
+If found is transmit active index, increase transmit active index.
+---------------
+
+Cyclic Connections
+
+-----------
+options for progress:
+
+ - multiplex entrance out to exit in into multiple UDP connections.
+ - multiplex processing and transmission threads.
+ - transparent pass through option for UDT stream.
+ - OpenVPN loopback split addition for passthough.
+
+-------------
+New Options:
+
+ - have the stats module report the maximum and average contiguous frame burst loss.
+ - repair timing for transmission by compensating for encode timing variance.
+ - multiple threads for transmission to extend the duration of each frame. - this will compensate for burst loss.
+ 
